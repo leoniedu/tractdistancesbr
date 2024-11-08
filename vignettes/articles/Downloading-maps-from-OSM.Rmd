@@ -19,6 +19,13 @@ library(dodgr)
 Based on https://urbananalyst.github.io/dodgr/articles/times.html
 
 ```{r}
+
+##https://github.com/UrbanAnalyst/dodgr/issues/128
+dat_sc <- osmdata::opq(bbox = bb) %>%
+    add_osm_feature(key = 'highway', value = 'motorway') %>%
+    osmdata_sc()
+
+
 dat_sc <- dodgr_streetnet_sc_mem ("cipó brazil")
 graph <- weight_streetnet (dat_sc, wt_profile = "bicycle")
 graph_t <- weight_streetnet (dat_sc, wt_profile = "bicycle", turn_penalty = TRUE)
