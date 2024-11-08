@@ -1,0 +1,61 @@
+---
+title: "Downloading maps from OSM"
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(tractdistancesbr)
+library(dplyr)
+library(dodgr)
+```
+
+
+Based on https://urbananalyst.github.io/dodgr/articles/times.html
+
+```{r}
+dat_sc <- dodgr_streetnet_sc_mem ("cipó brazil")
+graph <- weight_streetnet (dat_sc, wt_profile = "bicycle")
+graph_t <- weight_streetnet (dat_sc, wt_profile = "bicycle", turn_penalty = TRUE)
+dim (graph)
+dim (graph_t)
+
+```
+
+
+
+```{r}
+graphc <- dodgr_contract_graph (graph) # not graph_t!
+v <- dodgr_vertices (graphc)
+n <- 100 # number of desired vertices
+from <- sample (v$id, size = n)
+to <- sample (v$id, size = n)
+graph_tc <- dodgr_contract_graph (graph_t)
+nrow (graph_tc)
+nrow (graph_t)
+
+lapply (dodgr::weighting_profiles, function (i) i [i$name == "bicycle", ])
+```
+
+
+```{r}
+graph <- weight_streetnet (hampi, wt_profile = "foot")
+n <- 100 # number of sample routing vertices
+set.seed (1)
+from <- sample (graph$from_id, size = n)
+to <- sample (graph$from_id, size = n)
+d_dist <- dodgr_dists (graph, from = from, to = to, shortest = TRUE) # default
+d_time <- dodgr_dists (graph, from = from, to = to, shortest = FALSE) # fastest paths
+plot (d_dist / 1000, d_time / 1000,
+    col = "orange",
+    xlab = "distances along shortest paths (km)",
+    ylab = "distances along fastest paths (km)"
+)
+lines (0:100, 0:100, col = "red", lty = 2)
+```
+
