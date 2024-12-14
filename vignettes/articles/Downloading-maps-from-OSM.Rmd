@@ -13,22 +13,105 @@ knitr::opts_chunk$set(
 library(tractdistancesbr)
 library(dplyr)
 library(dodgr)
+#pak::pak("ropensci/osmplotr")
+library(osmplotr) 
 ```
 
 
+<!-- The component column column can be used to select or filter any component in a graph. It is particularly useful to ensure routing calculations consider only connected vertices through simply removing all minor components: -->
+
 Based on https://urbananalyst.github.io/dodgr/articles/times.html
 
+
 ```{r}
+```
+
+
+```{r}
+```
+
+
+9. load contracted
+10. load tract positions
+11. calculate distances
+```{r}
+library(dodgr)
+library(ggplot2)
+library(sf)
+library(dplyr)
+
+
+#bb <- dodgr:::process_bbox(osmdata::getbb("Bahia, Brazil"), pts=NULL, expand=.05)$bbox
+#readr::write_rds(m, 'data-raw/nordeste.rds')
+## FIX: remove empty?
+## FIX: m <- m%>%dplyr::filter(!highway%in%c("construction", "proposed", "busway", "raceway", "rest_area", "dummy", "corridor", "road", "escape", "ladder"))
+# m <- readr::read_rds('data-raw/bahia.rds')
+## FIX: convert multilinestring to LINESTRING
+
+#dim(m)
+#m <- m%>%filter(!is.na(highway))
+#dim(m)
+m <- m%>%dplyr::filter(!highway%in%c("construction", "proposed", "busway", "raceway", "rest_area", "dummy", "corridor", "road", "escape", "ladder"))
+
+dim(m)
+graph <- weight_streetnet (m, wt_profile = "motorcar")
+
+#readr::write_rds(net, 'data-raw/bahia_net.rds')
+
+
+graph <- weight_streetnet (m, wt_profile = "foot")
+grc <- dodgr_contract_graph (graph)
+v <- dodgr_vertices (graph)
+vc <- dodgr_vertices (grc)
+ggplot(aes(x,y, color=factor(component)), data=v) + geom_point(alpha=1/10) + scale_color_discrete() +
+  geom_point(data=vc, alpha=1, size=1)
 
 ##https://github.com/UrbanAnalyst/dodgr/issues/128
-dat_sc <- osmdata::opq(bbox = bb) %>%
-    add_osm_feature(key = 'highway', value = 'motorway') %>%
-    osmdata_sc()
+bb <- dodgr:::process_bbox(osmdata::getbb("Itacaré, Brazil"), pts=NULL, expand=.05)
+fts <- c("\"highway\"", "\"restriction\"", "\"access\"", 
+        "\"motorcar\"", "\"motor_vehicle\"", "\"vehicle\"", "\"toll\"")
+# net <- osmdata::opq(bb$bbox) %>% 
+#   osmdata::add_osm_features(features = fts) %>% 
+#   #osmdata::osmdata_sc(quiet = TRUE)
+#   osmdata::osmdata()
+    
+net <- dodgr_streetnet_sc(bb, quiet=FALSE)
+net <- weight_streetnet (net, wt_profile = "motorcar")
+
+dat_HP <- extract_osm_objects (
+    bbox = bb,
+    key = "highway",
+    value = "primary"
+)
+
+dat_BNR <- extract_osm_objects (
+    bbox = bb,
+    key = "building")
+
+map <- osm_basemap (bb, bg = "gray95")%>%
+  add_osm_objects (dat_HP, col = "gray5")%>%
+  #add_osm_objects (dat_BNR, col = "blue")%>%
+  add_axes ()
+print_osm_map (map)
 
 
-dat_sc <- dodgr_streetnet_sc_mem ("cipó brazil")
-graph <- weight_streetnet (dat_sc, wt_profile = "bicycle")
-graph_t <- weight_streetnet (dat_sc, wt_profile = "bicycle", turn_penalty = TRUE)
+npts <- 1000
+xy <- apply (bb, 1, function (i) min (i) + runif (npts) * diff (i))
+bb; head (xy)
+system.time (
+            d <- dodgr_dists (net, from = xy, to = xy)
+            )
+dim (d); range (d, na.rm = TRUE)
+
+bahia_sc <- osmdata::opq(bbox = bb) %>%
+    osmdata::add_osm_features(features=c("\"highway\"", "\"restriction\"", "\"access\"", "\"motorcar\"", "\"motor_vehicle\"", "\"vehicle\"", "\"toll\"")) %>%
+    osmdata::osmdata_sc()
+dat_sc <- bahia_sc
+
+
+# dat_sc <- dodgr_streetnet_sc_mem ("Bahia, Brazil")
+graph <- weight_streetnet (dat_sc, wt_profile = "motorcar")
+graph_t <- weight_streetnet (dat_sc, wt_profile = "motorcar", turn_penalty = TRUE)
 dim (graph)
 dim (graph_t)
 
@@ -46,12 +129,12 @@ graph_tc <- dodgr_contract_graph (graph_t)
 nrow (graph_tc)
 nrow (graph_t)
 
-lapply (dodgr::weighting_profiles, function (i) i [i$name == "bicycle", ])
+lapply (dodgr::weighting_profiles, function (i) i [i$name == "motorcar", ])
 ```
 
 
 ```{r}
-graph <- weight_streetnet (hampi, wt_profile = "foot")
+#graph <- weight_streetnet (hampi, wt_profile = "foot")
 n <- 100 # number of sample routing vertices
 set.seed (1)
 from <- sample (graph$from_id, size = n)

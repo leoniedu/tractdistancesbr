@@ -15,4 +15,8 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
 Imports: 
     dodgr,
-    geodist
+    geodist,
+    osmdata,
+    osmextract,
+    silicate,
+    cli
