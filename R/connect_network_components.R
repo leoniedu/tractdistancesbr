@@ -6,7 +6,6 @@ library(lwgeom)
 library(rmapshaper)
 
 connect_network_components <- function(lines_sf,
-                                       simplify_intersect = TRUE,
                                        connection_type = "artificial",
                                        new_id_column = "line_id",
                                        clean_network = TRUE) {
@@ -47,44 +46,60 @@ connect_network_components <- function(lines_sf,
     component_hulls[[i]] <- st_convex_hull(points_sfc)
   }
 
-  # Calculate distances between hulls and find connections
+  # Calculate distances and find connections
   distances <- matrix(Inf, n_components, n_components)
   connections <- list()
 
   for(i in 1:(n_components-1)) {
     for(j in (i+1):n_components) {
-      hull_dist <- as.numeric(st_distance(component_hulls[[i]],
-                                          component_hulls[[j]]))
+      # Try to find intersection
+      intersection <- st_intersection(component_hulls[[i]], component_hulls[[j]])
 
-      if(hull_dist < .Machine$double.eps || !simplify_intersect) {
-        comp_i <- idx_to_comp[as.character(i)]
-        comp_j <- idx_to_comp[as.character(j)]
-
-        comp1_lines <- lines_sf %>% filter(component == comp_i)
-        comp2_lines <- lines_sf %>% filter(component == comp_j)
-        nearest_points <- st_nearest_points(comp1_lines, comp2_lines)
-        min_dist <- min(as.numeric(st_length(nearest_points)))
-        min_idx <- which.min(st_length(nearest_points))
+      if(length(intersection) > 0) {
+        # Hulls intersect - use centroid of intersection
+        connection_point <- st_centroid(intersection)
+        connection_line <- st_linestring(rbind(
+          st_coordinates(connection_point),
+          st_coordinates(connection_point)
+        ))
 
         connections[[paste(i,j)]] <- list(
-          from_component = comp_i,
-          to_component = comp_j,
-          from_line_idx = which(lines_sf$component == comp_i)[min_idx],
-          to_line_idx = which(lines_sf$component == comp_j)[min_idx],
-          connection_line = nearest_points[min_idx],
-          distance = min_dist
+          from_component = idx_to_comp[as.character(i)],
+          to_component = idx_to_comp[as.character(j)],
+          connection_line = connection_line,
+          distance = 0
         )
 
-        distances[i,j] <- distances[j,i] <- min_dist
+        distances[i,j] <- distances[j,i] <- 0
+
+      } else {
+        # Hulls don't intersect - use hull distance
+        hull_dist <- as.numeric(st_distance(component_hulls[[i]],
+                                            component_hulls[[j]]))
+        nearest_hull_points <- st_nearest_points(component_hulls[[i]],
+                                                 component_hulls[[j]])
+
+        connections[[paste(i,j)]] <- list(
+          from_component = idx_to_comp[as.character(i)],
+          to_component = idx_to_comp[as.character(j)],
+          connection_line = nearest_hull_points,
+          distance = hull_dist
+        )
+
+        distances[i,j] <- distances[j,i] <- hull_dist
       }
     }
   }
 
-  # Rest of the function remains the same...
+  # Set diagonal to 0 to avoid NA issues
+  diag(distances) <- 0
+
+  # Use TSP solver to find minimum spanning tree
   tsp <- TSP(distances)
   tour <- solve_TSP(tsp, method = "nearest_insertion")
   tour_vector <- as.integer(tour)
 
+  # Process the selected connections
   processed_lines <- list()
   next_id <- max(lines_sf[[new_id_column]]) + 1
   lines_to_remove <- integer()
@@ -96,16 +111,27 @@ connect_network_components <- function(lines_sf,
     conn_key <- paste(min(from_idx, to_idx), max(from_idx, to_idx))
     conn <- connections[[conn_key]]
 
-    # Split first line
-    line1 <- lines_sf[conn$from_line_idx,]
-    split_point1 <- st_cast(conn$connection_line, "POINT")[1]
-    split1 <- st_split(st_geometry(line1), split_point1)
+    # Find nearest lines to connection points in each component
+    from_point <- st_point(st_coordinates(conn$connection_line)[1,])
+    to_point <- st_point(st_coordinates(conn$connection_line)[2,])
+
+    comp1_lines <- lines_sf %>% filter(component == conn$from_component)
+    comp2_lines <- lines_sf %>% filter(component == conn$to_component)
+
+    from_line_idx <- which.min(st_distance(comp1_lines, from_point))
+    to_line_idx <- which.min(st_distance(comp2_lines, to_point))
+
+    # Get actual line indices in original data
+    from_line_idx_orig <- which(lines_sf$component == conn$from_component)[from_line_idx]
+    to_line_idx_orig <- which(lines_sf$component == conn$to_component)[to_line_idx]
+
+    # Split lines at connection points
+    line1 <- lines_sf[from_line_idx_orig,]
+    split1 <- st_split(st_geometry(line1), from_point)
     segments1 <- st_collection_extract(split1, "LINESTRING")
 
-    # Split second line
-    line2 <- lines_sf[conn$to_line_idx,]
-    split_point2 <- st_cast(conn$connection_line, "POINT")[2]
-    split2 <- st_split(st_geometry(line2), split_point2)
+    line2 <- lines_sf[to_line_idx_orig,]
+    split2 <- st_split(st_geometry(line2), to_point)
     segments2 <- st_collection_extract(split2, "LINESTRING")
 
     # Process split segments
@@ -117,7 +143,7 @@ connect_network_components <- function(lines_sf,
         next_id <- next_id + 1
         processed_lines[[length(processed_lines) + 1]] <- new_line
       }
-      lines_to_remove <- c(lines_to_remove, conn$from_line_idx)
+      lines_to_remove <- c(lines_to_remove, from_line_idx_orig)
     }
 
     if(length(segments2) > 0) {
@@ -128,7 +154,7 @@ connect_network_components <- function(lines_sf,
         next_id <- next_id + 1
         processed_lines[[length(processed_lines) + 1]] <- new_line
       }
-      lines_to_remove <- c(lines_to_remove, conn$to_line_idx)
+      lines_to_remove <- c(lines_to_remove, to_line_idx_orig)
     }
 
     # Create connection
