@@ -8,14 +8,12 @@ library(rmapshaper)
 connect_network_components <- function(lines_sf,
                                        connection_type = "artificial",
                                        new_id_column = "line_id",
-                                       clean_network = TRUE,
                                        precision_digits = NULL,
                                        track_memory = TRUE) {
-                                       track_memory = FALSE) {
 
   track_mem <- function(step) {
     if(track_memory) {
-      message(sprintf("Memory at %s:", step))
+      cli::cli_inform("Memory at {step}")
     }
     gc(verbose = track_memory)
   }
@@ -63,8 +61,8 @@ connect_network_components <- function(lines_sf,
   for(i in seq_len(n_components)) {
     comp <- components[i]
     coords <- st_coordinates(lines_sf[lines_sf$component == comp,])[,c("X","Y")]
-    hull <- st_convex_hull(st_sfc(st_multipoint(coords), crs = current_crs)) %>%
-      st_simplify(dTolerance = hull_tolerance)
+    hull <- convex_hull_mem(coords, hull_tolerance=hull_tolerance)
+    st_crs(hull) <- st_crs(lines_sf)
     component_hulls[[i]] <- hull
     rm(hull)
     rm(coords)
@@ -79,36 +77,30 @@ connect_network_components <- function(lines_sf,
   track_mem("before distance calculations")
   for(i in 1:(n_components-1)) {
     for(j in (i+1):n_components) {
-      nearest_points <- st_nearest_points(component_hulls[[i]], component_hulls[[j]])
-
-      if(st_intersects(component_hulls[[i]], component_hulls[[j]], sparse=FALSE)[1,1]) {
-        # Hulls intersect - use single point and zero distance
-        connection_line <- st_sfc(st_linestring(rbind(
-          st_coordinates(nearest_points)[1,],
-          st_coordinates(nearest_points)[1,]
-        )), crs = current_crs)
-
-        connections[[paste(i,j)]] <- list(
-          from_component = components[i],
-          to_component = components[j],
-          connection_line = connection_line,
-          distance = 0
-        )
-
-        distances[i,j] <- distances[j,i] <- 0
-      } else {
-        # Hulls don't intersect - use actual distance and points
-        hull_dist <- as.numeric(st_length(nearest_points))
-
-        connections[[paste(i,j)]] <- list(
-          from_component = components[i],
-          to_component = components[j],
-          connection_line = st_sfc(nearest_points, crs = current_crs),
-          distance = hull_dist
-        )
-
-        distances[i,j] <- distances[j,i] <- hull_dist
-      }
+      browser()
+      comp_i <- components[i]
+      comp_j <- components[j]
+      nearest_points <- st_nearest_points(component_hulls[[i]], component_hulls[[j]])%>%st_cast("POINT")
+      point_intersect_hulls <- nearest_points[1,]
+      nearest_points_i <- st_nearest_points(point_intersect_hulls, lines_sf[lines_sf$component == comp_i,])[1,]
+      # gives all start & end points
+      # end point in 2,4,6...
+      nearest_points_i <- st_cast(nearest_points_i, "POINT")[2,]
+      nearest_points_j <- st_nearest_points(point_intersect_hulls, lines_sf[lines_sf$component == comp_j,])[1,]
+      # gives all start & end points
+      # end point in 2,4,6...
+      nearest_points_j <- st_cast(nearest_points_j, "POINT")[2,]
+      connection_line <- st_sfc(st_linestring(rbind(
+        st_coordinates(nearest_points_i)[1,],
+        st_coordinates(nearest_points_j)[1,]
+      )), crs = current_crs)
+      connections[[paste(i,j)]] <- list(
+        from_component = components[i],
+        to_component = components[j],
+        connection_line = connection_line,
+        distance = st_length(connection_line)
+      )
+        distances[i,j] <- distances[j,i] <- st_length(connection_line)
     }
     if(track_memory && i %% 100 == 0) {
       track_mem(sprintf("after %d distance rows", i))
@@ -137,6 +129,7 @@ connect_network_components <- function(lines_sf,
   lines_to_remove <- integer()
 
   for(i in seq_len(nrow(edge_list))) {
+    track_mem(glue::glue("cleanup before connecting edge {i}"))
     from_idx <- edge_list[i,1]
     to_idx <- edge_list[i,2]
 
@@ -207,19 +200,12 @@ connect_network_components <- function(lines_sf,
 
   if(length(processed_lines) > 0) {
     track_mem("before final combining")
-    new_lines_sf <- do.call(rbind, processed_lines)
+    new_lines_sf <- bind_rows(processed_lines)
     artificial_edges_sf <- new_lines_sf[new_lines_sf$highway == connection_type,]
-
-    complete_network <- rbind(
+    complete_network <- bind_rows(
       lines_sf[!seq_len(nrow(lines_sf)) %in% lines_to_remove,],
       new_lines_sf
     )
-
-    if(clean_network) {
-      complete_network <- ms_simplify(complete_network, keep = 0.99,
-                                      keep_shapes = TRUE)
-      complete_network <- st_simplify(complete_network, dTolerance = hull_tolerance)
-    }
     track_mem("after final combining")
   } else {
     warning("No lines were successfully processed")
