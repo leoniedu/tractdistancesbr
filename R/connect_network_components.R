@@ -11,6 +11,7 @@ connect_network_components <- function(lines_sf,
                                        clean_network = TRUE,
                                        precision_digits = NULL,
                                        track_memory = TRUE) {
+                                       track_memory = FALSE) {
 
   track_mem <- function(step) {
     if(track_memory) {
@@ -78,29 +79,26 @@ connect_network_components <- function(lines_sf,
   track_mem("before distance calculations")
   for(i in 1:(n_components-1)) {
     for(j in (i+1):n_components) {
-      # Check intersection
-      intersection <- st_intersection(component_hulls[[i]], component_hulls[[j]])
+      nearest_points <- st_nearest_points(component_hulls[[i]], component_hulls[[j]])
 
-      if(length(intersection) > 0) {
-        connection_point <- st_centroid(intersection)
-        connection_geom <- st_linestring(rbind(
-          st_coordinates(connection_point),
-          st_coordinates(connection_point)
-        ))
+      if(st_intersects(component_hulls[[i]], component_hulls[[j]], sparse=FALSE)[1,1]) {
+        # Hulls intersect - use single point and zero distance
+        connection_line <- st_sfc(st_linestring(rbind(
+          st_coordinates(nearest_points)[1,],
+          st_coordinates(nearest_points)[1,]
+        )), crs = current_crs)
 
         connections[[paste(i,j)]] <- list(
           from_component = components[i],
           to_component = components[j],
-          connection_line = st_sfc(connection_geom, crs = current_crs),
+          connection_line = connection_line,
           distance = 0
         )
 
         distances[i,j] <- distances[j,i] <- 0
       } else {
-        hull_dist <- as.numeric(st_distance(component_hulls[[i]],
-                                            component_hulls[[j]]))
-        nearest_points <- st_nearest_points(component_hulls[[i]],
-                                            component_hulls[[j]])
+        # Hulls don't intersect - use actual distance and points
+        hull_dist <- as.numeric(st_length(nearest_points))
 
         connections[[paste(i,j)]] <- list(
           from_component = components[i],
