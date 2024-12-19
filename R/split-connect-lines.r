@@ -79,21 +79,9 @@ split_and_connect_lines <- function(line1_sf, point1_sf, point2_sf,
         new_line <- segments1[i,]
         new_line$segment_id <- paste0(id_prefix, "_", next_segment_id)
         new_line$original_id <- line1_sf$way_id
+        new_line$artificial <- FALSE
         next_segment_id <- next_segment_id + 1
         new_lines[[length(new_lines) + 1]] <- new_line
-    }
-
-    # Process second line if provided
-    if (!is.null(line2_sf)) {
-        segments2 <- snap_split_linestring(line2_sf, point2_sf)
-
-        for (i in 1:nrow(segments2)) {
-            new_line <- segments2[i,]
-            new_line$segment_id <- paste0(id_prefix, "_", next_segment_id)
-            new_line$original_id <- line2_sf$way_id
-            next_segment_id <- next_segment_id + 1
-            new_lines[[length(new_lines) + 1]] <- new_line
-        }
     }
 
     # Create connection line
@@ -113,6 +101,20 @@ split_and_connect_lines <- function(line1_sf, point1_sf, point2_sf,
         artificial = TRUE,
         ...
     )
+
+    # Process second line if provided
+    if (!is.null(line2_sf)) {
+        segments2 <- snap_split_linestring(line2_sf, point2_sf)
+
+        for (i in 1:nrow(segments2)) {
+            new_line <- segments2[i,]
+            new_line$segment_id <- paste0(id_prefix, "_", next_segment_id)
+            new_line$original_id <- line2_sf$way_id
+            new_line$artificial <- FALSE
+            next_segment_id <- next_segment_id + 1
+            new_lines[[length(new_lines) + 1]] <- new_line
+        }
+    }
 
     # Add connection to new lines and combine all
     new_lines[[length(new_lines) + 1]] <- connection
