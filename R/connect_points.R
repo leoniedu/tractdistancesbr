@@ -3,8 +3,6 @@
 NULL
 
 #' @describeIn street_network Connect points to road network
-#' @param street_id_col Character string specifying the column name containing street identifiers
-#' @param point_id_col Character string specifying the column name containing point identifiers
 #' @export
 connect_points <- function(streets, points, max_distance = Inf,
                            connection_profile = "footway",
@@ -91,7 +89,6 @@ connect_points <- function(streets, points, max_distance = Inf,
 
         # Create result data frame
         result <- data.frame(
-          connection_id = i,
           distance_to_street = as.numeric(dist),
           waterway_type = waterway_type
         )
@@ -128,7 +125,6 @@ connect_points <- function(streets, points, max_distance = Inf,
 
   # Return empty sf object if no connections
   empty_result <- data.frame(
-    connection_id = integer(0),
     distance_to_street = numeric(0),
     waterway_type = character(0)
   )

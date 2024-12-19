@@ -1,96 +1,122 @@
-#' Plot Points, Nearest Streets and Artificial Connections over OpenStreetMap
+#' Plot Artificial Connections and Their Connected Street Segments over OpenStreetMap
 #'
+#' @param connections An sf object output from connect_points() function
 #' @param streets An sf object with LINESTRING geometry representing the street network
-#' @param points An sf object with POINT geometry
-#' @param id_col Character string specifying the column name containing unique identifiers. Default is "osm_id"
-#' @param artificial_prefix Character string specifying the prefix used for artificial connections. Default is "artificial_"
+#' @param street_id_col Character string specifying the column name containing street identifiers
+#' @param tracts_sf Optional; an sf object with POLYGON geometry representing census tracts
+#' @param tract_label_col Optional; column name in tracts_sf to use for labels
+#' @param tract_id Optional; column name present in both connections and tracts_sf to link them
 #' @return A leaflet map object
 #' @export
-#' @importFrom leaflet leaflet addTiles addPolylines addCircleMarkers
-#' @importFrom sf st_transform st_cast st_distance
+#' @importFrom leaflet leaflet addTiles addPolylines addPolygons
+#' @importFrom sf st_transform st_cast
 #'
-#' @examples
-#' \dontrun{
-#' # Read OSM streets
-#' streets_sf <- read_pbf("path/to/file.osm.pbf")
-#'
-#' # Points as sf object
-#' points_sf <- sf::st_as_sf(
-#'   data.frame(id = 1:2),
-#'   coords = c(-46.633, -23.550),
-#'   crs = 4326
-#' )
-#'
-#' # Add connections
-#' streets_connected <- connect_points(streets_sf, points_sf)
-#'
-#' # Plot the points, nearest streets and their connections over OSM
-#' plot_connections(streets_connected, points_sf)
-#' }
-plot_connections <- function(streets, points,
-                           id_col = "osm_id",
-                           artificial_prefix = "artificial_") {
-
+plot_connections <- function(connections, streets, street_id_col,
+                             tracts_sf = NULL, tract_label_col = NULL,
+                             tract_id = NULL) {
   # Validate inputs
-  if (!inherits(streets, "sf") || !inherits(points, "sf")) {
-    stop("Both streets and points must be sf objects")
+  if (!inherits(connections, "sf") || !inherits(streets, "sf")) {
+    stop("Both connections and streets must be sf objects")
   }
+  if (!street_id_col %in% names(streets) || !street_id_col %in% names(connections)) {
+    stop(sprintf("Column '%s' not found in both streets and connections", street_id_col))
+  }
+  streets <- streets|>dplyr::semi_join(connections|>sf::st_drop_geometry(), by=street_id_col)
 
-  if (!id_col %in% names(streets)) {
-    stop(sprintf("Column '%s' not found in streets", id_col))
+  # Validate tracts if provided
+  if (!is.null(tracts_sf)) {
+    if (is.null(tract_id)) stop("Must provide tract_id")
+    if (!inherits(tracts_sf, "sf")) {
+      stop("tracts_sf must be an sf object")
+    }
+    if (!is.null(tract_label_col) && !tract_label_col %in% names(tracts_sf)) {
+      stop(sprintf("Column '%s' not found in tracts_sf", tract_label_col))
+    }
+    if (!is.null(tract_id)) {
+      if (!tract_id %in% names(tracts_sf)) {
+        stop(sprintf("Column '%s' not found in tracts_sf", tract_id))
+      }
+      if (!tract_id %in% names(connections)) {
+        stop(sprintf("Column '%s' not found in connections", tract_id))
+      }
+    }
+    if (is.null(tract_label_col)) {
+      tract_label_col <- tract_id
+    }
+    tracts_sf <- tracts_sf|>dplyr::semi_join(connections|>sf::st_drop_geometry(), by=tract_id)
   }
 
   # Ensure data is in WGS84 for leaflet
+  connections <- sf::st_transform(connections, 4326)
   streets <- sf::st_transform(streets, 4326)
-  points <- sf::st_transform(points, 4326)
+  if (!is.null(tracts_sf)) {
+    tracts_sf <- sf::st_transform(tracts_sf, 4326)
+  }
 
   # Ensure streets are LINESTRING
   streets <- sf::st_cast(streets, "LINESTRING")
 
-  # Separate artificial connections and regular streets
-  is_artificial <- grepl(artificial_prefix, streets[[id_col]])
-  regular_streets <- streets[!is_artificial, ]
-
-  # Find nearest street for each point
-  nearest_streets <- do.call(rbind, lapply(seq_len(nrow(points)), function(i) {
-    distances <- sf::st_distance(points[i,], regular_streets)
-    nearest_idx <- which.min(distances)
-    regular_streets[nearest_idx,]
-  }))
-
-  # Create the base map with nearest streets and points
+  # Create the base map
   map <- leaflet::leaflet() %>%
     # Add OpenStreetMap tiles as base layer
-    leaflet::addTiles() %>%
-    # Add nearest streets
-    leaflet::addPolylines(
-      data = nearest_streets,
-      color = "blue",
-      weight = 3,
-      opacity = 0.8
-    ) %>%
-    # Add points
-    leaflet::addCircleMarkers(
-      data = points,
-      radius = 6,
-      color = "purple",
-      fillOpacity = 0.8,
-      stroke = FALSE
-    )
+    leaflet::addTiles()
 
-  # Add artificial connections if they exist
-  if (any(is_artificial)) {
-    artificial_connections <- streets[is_artificial, ]
+  # Add census tracts if provided
+  if (!is.null(tracts_sf)) {
     map <- map %>%
-      leaflet::addPolylines(
-        data = artificial_connections,
-        color = "red",
-        weight = 3,
-        opacity = 1,
-        dashArray = "5,10",
-        label = ~get(id_col)
+      leaflet::addPolygons(
+        data = tracts_sf,
+        fillColor = "lightblue",
+        fillOpacity = 0.3,
+        weight = 1,
+        color = "blue",
+        label = ~if (!is.null(tract_label_col)) {
+            get(tract_label_col)
+        } else {
+          ifelse(has_connections, "Has connections", "No connections")
+        },
+        highlightOptions = leaflet::highlightOptions(
+          weight = 2,
+          color = "black",
+          fillOpacity = 0.5,
+          bringToFront = TRUE
+        ),
+        group = "Census Tracts"
       )
   }
+
+  # Add street network and connections
+  map <- map %>%
+    # Add connected streets
+    leaflet::addPolylines(
+      data = streets,
+      color = "blue",
+      weight = 3,
+      opacity = 0.8,
+      label = ~get(street_id_col),
+      group = "Streets"
+    ) %>%
+    # Add artificial connections
+    leaflet::addPolylines(
+      data = connections,
+      color = "red",
+      weight = 3,
+      opacity = 1,
+      dashArray = "5,10",
+      label = ~{
+        label <- paste("Street:", get(street_id_col))
+        if (!is.null(tract_id)) {
+          label <- paste(label, "\nTract:", get(tract_id))
+        }
+        label
+      },
+      group = "Connections"
+    ) %>%
+    # Add layer controls
+    leaflet::addLayersControl(
+      overlayGroups = c("Census Tracts", "Streets", "Connections"),
+      options = leaflet::layersControlOptions(collapsed = FALSE)
+    )
 
   return(map)
 }

@@ -20,17 +20,21 @@ read_pbf <- function(pbf_path,
                     extra_tags = c(
                       "highway", "surface", "maxspeed", "lanes", "bridge",
                       "tunnel", "oneway", "junction", "ref", "name"
-                    )) {
+                    ), read_multiline=FALSE, ...) {
   if (!file.exists(pbf_path)) {
     cli::cli_alert_danger("File does not exist:", pbf_path)
     stop()
   }
 
   lines_sf <- osmextract::oe_read(pbf_path, layer = "lines",
-                                      query = "SELECT * FROM lines WHERE highway IS NOT NULL", extra_tags = extra_tags)
+                                      query = "SELECT * FROM lines WHERE highway IS NOT NULL", extra_tags = extra_tags, ...)
   if (nrow(lines_sf)==0) stop("No lines found.")
-  multilines_sf <- osmextract::oe_read(pbf_path, layer = "lines",
-                                  query = "SELECT * FROM multilinestrings WHERE highway IS NOT NULL", extra_tags = extra_tags)
+  if (read_multiline) {
+    multilines_sf <- osmextract::oe_read(pbf_path, layer = "lines",
+                                         query = "SELECT * FROM multilinestrings WHERE highway IS NOT NULL", extra_tags = extra_tags, ...)
+  } else {
+    multilines_sf <- data.frame()
+  }
   if (nrow(lines_sf)>0 && nrow(multilines_sf)>0) {
     if (!quiet) cli::cli_alert_info("Converting highway multilinestrings to linestrings...")
     # Convert multilines to lines
