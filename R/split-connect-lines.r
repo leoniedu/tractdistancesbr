@@ -74,12 +74,13 @@ split_and_connect_lines <- function(line1_sf, point1_sf, point2_sf,
     # Split first line using snap_split_linestring
     segments1 <- snap_split_linestring(line1_sf, point1_sf)
 
-    # Process first line segments
+    # Process first line segments - preserve all attributes
     for (i in 1:nrow(segments1)) {
         new_line <- segments1[i,]
+        # Add new columns while preserving all original attributes
         new_line$segment_id <- paste0(id_prefix, "_", next_segment_id)
-        new_line$original_id <- line1_sf$way_id
-        new_line$artificial <- FALSE
+        # way_id is kept from original line since we preserved all attributes
+        new_line$artificial <- FALSE  # These are real segments
         next_segment_id <- next_segment_id + 1
         new_lines[[length(new_lines) + 1]] <- new_line
     }
@@ -91,14 +92,13 @@ split_and_connect_lines <- function(line1_sf, point1_sf, point2_sf,
     )
     connection_geom <- st_linestring(connection_coords)
 
-    # Create new connection with required attributes
+    # Create new connection with minimal attributes
     connection <- st_sf(
         geometry = st_sfc(connection_geom, crs = st_crs(line1_sf)),
         segment_id = connection_id,
-        original_id = NA,
-        connection_id = connection_id,
-        highway = highway,
-        artificial = TRUE,
+        way_id = NA,  # No original way_id
+        highway = highway,  # Use specified connection type
+        artificial = TRUE,  # This is an artificial connection
         ...
     )
 
@@ -108,9 +108,10 @@ split_and_connect_lines <- function(line1_sf, point1_sf, point2_sf,
 
         for (i in 1:nrow(segments2)) {
             new_line <- segments2[i,]
+            # Add new columns while preserving all original attributes
             new_line$segment_id <- paste0(id_prefix, "_", next_segment_id)
-            new_line$original_id <- line2_sf$way_id
-            new_line$artificial <- FALSE
+            # way_id is kept from original line since we preserved all attributes
+            new_line$artificial <- FALSE  # These are real segments
             next_segment_id <- next_segment_id + 1
             new_lines[[length(new_lines) + 1]] <- new_line
         }
@@ -122,6 +123,9 @@ split_and_connect_lines <- function(line1_sf, point1_sf, point2_sf,
 
     return(result)
 }
+
+
+
 
 
 #' Visualize Network Split and Connection
