@@ -1,8 +1,4 @@
 #' Connect Network Components Using Closest Vertices
-#'
-#' A simplified function that connects disconnected components of a street network
-#' by finding and connecting the closest vertices between components.
-#'
 #' @param lines_sf sf object containing the street network linestrings
 #' @param dodgr_net A dodgr network graph with component and vertex information
 #' @param connection_type Character string specifying the type for new connections
@@ -10,19 +6,15 @@
 #' @param dodgr_way_id Name of the column in dodgr_net containing way IDs
 #' @param track_memory Logical; whether to track memory usage
 #'
-#' @return A list containing the complete network and artificial edges
-#'
-#' @import sf dplyr igraph dodgr
-#' @export
-#'
 connect_components_simple <- function(lines_sf,
                                       dodgr_net,
                                       connection_type = "artificial",
                                       lines_way_id = "osm_id",
                                       dodgr_way_id = "way_id",
-                                      new_way_id= "new_id",
+                                      new_way_id = "new_id",
                                       track_memory = TRUE) {
 
+  # Helper function to track memory usage if requested
   track_mem <- function(step) {
     if(track_memory) {
       cli::cli_inform("Memory at {step}")
@@ -32,7 +24,7 @@ connect_components_simple <- function(lines_sf,
 
   track_mem("start")
 
-  # Basic validation
+  # Basic validation of required columns
   if(!lines_way_id %in% names(lines_sf)) {
     stop(paste("lines_sf must have a", lines_way_id, "column"))
   }
@@ -42,7 +34,7 @@ connect_components_simple <- function(lines_sf,
   if(!"component" %in% names(dodgr_net))
     stop("dodgr_net must have a component column")
 
-  # Filter lines_sf to only include ways present in dodgr_net
+  # Filter lines_sf to only include ways that exist in dodgr_net
   lines_sf <- lines_sf %>%
     semi_join(
       data.frame(way_id = unique(dodgr_net[[dodgr_way_id]])),
@@ -52,10 +44,11 @@ connect_components_simple <- function(lines_sf,
   if(nrow(lines_sf) == 0)
     stop("No matching ways found between lines_sf and dodgr_net")
 
-  # Get unique components
+  # Get list of unique components from the network
   components <- unique(dodgr_net$component)
   n_components <- length(components)
 
+  # If only one component, return original network unchanged
   if(n_components <= 1) {
     return(list(
       complete_network = lines_sf,
@@ -65,53 +58,62 @@ connect_components_simple <- function(lines_sf,
 
   track_mem("before vertex processing")
 
-  # Get vertices from dodgr network
+  # Get vertices from dodgr network and current coordinate reference system
   vertices <- dodgr_vertices(dodgr_net)
   current_crs <- st_crs(lines_sf)
 
-  # Initialize lists for storing connections
+  # Initialize data structures for storing all possible connections:
+  # - artificial_lines: list to store the actual connection geometries
+  # - distances: matrix to store distances between components for MST
+  # - edge_indices: matrix to track which connection belongs to which component pair
   artificial_lines <- list()
   distances <- matrix(Inf, n_components, n_components)
+  edge_indices <- matrix("", n_components, n_components)
   conn_counter <- 1
 
   track_mem("before component connections")
 
-  # Calculate distances between components
+  # Calculate all possible connections between components
   for(i in 1:(n_components-1)) {
     for(j in (i+1):n_components) {
-      # Get vertices for each component
-      ## FIX: Cant just get from the component column?
+      # Extract vertices belonging to each component
       comp_i_verts <- vertices[vertices$component==components[i],]
       comp_j_verts <- vertices[vertices$component==components[j],]
-      # Convert to sf points
+
+      # Convert vertices to sf points for spatial operations
       comp_i_points <- st_as_sf(comp_i_verts, coords = c("x", "y"),
                                 crs = current_crs)
       comp_j_points <- st_as_sf(comp_j_verts, coords = c("x", "y"),
                                 crs = current_crs)
 
-      # Find nearest points using st_nearest_feature
+      # Find nearest points between components:
+      # 1. Find closest point in component i to any point in component j
+      # 2. Find closest point in component j to that specific point in component i
       nearest_i_idx <- st_nearest_feature(comp_j_points, comp_i_points)
       nearest_j_idx <- st_nearest_feature(comp_i_points[nearest_i_idx[1],],
                                           comp_j_points)
 
-      # Create connecting line
+      # Create a straight line connecting the nearest points
       connection <- st_sfc(st_linestring(rbind(
         st_coordinates(comp_i_points[nearest_i_idx[1],]),
         st_coordinates(comp_j_points[nearest_j_idx[1],])
       )), crs = current_crs)
 
-      # Store distance for MST
+      # Store the distance in both directions (symmetric matrix)
       distances[i,j] <- distances[j,i] <- st_length(connection)
 
-      # Create artificial edge with the dodgr way ID format
-      artificial_lines[[conn_counter]] <- st_sf(
+      # Create unique ID for this connection and store it in edge_indices
+      conn_id <- paste0("CONN_", i, "_", j)
+      edge_indices[i,j] <- edge_indices[j,i] <- conn_id
+
+      # Store the connection geometry in artificial_lines using conn_id as key
+      artificial_lines[[conn_id]] <- st_sf(
         geometry = connection,
         highway = connection_type,
         artificial = TRUE
       )
-      # Add way ID column with the same name as dodgr_net uses
-      artificial_lines[[conn_counter]][[new_way_id]] <-
-        paste0("CONN_", i, "_", j)
+      # Add the connection ID as the new way ID
+      artificial_lines[[conn_id]][[new_way_id]] <- conn_id
 
       conn_counter <- conn_counter + 1
 
@@ -123,61 +125,44 @@ connect_components_simple <- function(lines_sf,
 
   track_mem("before MST")
 
-  # Find minimum spanning tree
-  browser()
+  # Calculate Minimum Spanning Tree:
+  # 1. Create graph from distance matrix
+  # 2. Find minimum spanning tree
+  # 3. Get list of edges in the MST
   g <- igraph::graph_from_adjacency_matrix(distances, weighted = TRUE,
-                                   mode = "undirected")
+                                           mode = "undirected")
   mst <- igraph::mst(g)
   edge_list <- igraph::as_edgelist(mst)
 
-
-  # Clean up large objects
+  # Clean up large objects no longer needed
   rm(distances, g, mst)
 
-  # Process the connections
-  track_mem("before processing connections")
-  all_segments <- list()
-  artificial_segments <- list()
+  track_mem("before final combining")
 
-  for(i in seq_len(nrow(edge_list))) {
+  # Get the connection IDs that correspond to the MST edges
+  mst_connections <- sapply(1:nrow(edge_list), function(i) {
     from_idx <- edge_list[i,1]
     to_idx <- edge_list[i,2]
+    # Look up the connection ID from our edge_indices matrix
+    edge_indices[from_idx, to_idx]
+  })
 
-    conn_key <- paste(min(from_idx, to_idx), max(from_idx, to_idx))
-    conn <- connections[[conn_key]]
+  # Keep only the connections that were selected by the MST
+  artificial_edges <- bind_rows(artificial_lines[mst_connections])
 
-    # Add segments from connection result
-    all_segments[[i]] <- conn$connection_result
-    artificial_segments[[i]] <- conn$connection_result[conn$connection_result$artificial,]
-
-  }
-  track_mem("after processing connections")
-
-  if(length(all_segments) > 0) {
-    track_mem("before final combining")
-
-    # Combine all segments
-    complete_network <- do.call(rbind, all_segments)
-    artificial_edges <- do.call(rbind, artificial_segments)
-
-    # Add remaining unmodified lines
-    modified_way_ids <- unique(complete_network$way_id)
-    unmodified_lines <- lines_sf[!lines_sf[[way_id_column]] %in% modified_way_ids,]
-    complete_network <- bind_rows(complete_network, unmodified_lines)
-
-    track_mem("after final combining")
-  } else {
-    warning("No lines were successfully processed")
-    complete_network <- lines_sf
-    artificial_edges <- NULL
-  }
+  # Combine original network with the MST-selected connections
+  complete_network <- bind_rows(
+    lines_sf,
+    artificial_edges
+  )
+  # Ensure all lines have a way ID, using original ID if no new one assigned
+  complete_network[[new_way_id]] <- coalesce(complete_network[[new_way_id]],
+                                             complete_network[[lines_way_id]])
 
   track_mem("end")
-  complete_network[[new_way_id]] <- coalesce(complete_network[[new_way_id]], complete_network[[lines_way_id]])
 
   return(list(
     complete_network = complete_network,
     artificial_edges = artificial_edges
   ))
 }
-

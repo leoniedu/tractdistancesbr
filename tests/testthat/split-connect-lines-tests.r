@@ -194,3 +194,4 @@ test_that("split_and_connect_lines handles additional attributes via ...", {
     expect_equal(connection$surface, "paved")
     expect_equal(connection$width, 2.5)
 })
+

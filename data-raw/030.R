@@ -19,12 +19,53 @@ tic()
 tmp2 <- connect_network_components(lines_sf = mc%>%mutate(id=as.character(id)), dodgr_net = gr[gr$component%in%v,], way_id_column = "id", track_memory = TRUE)
 toc()
 
+tic()
+tmp2s <- connect_components_simple(lines_sf = mc%>%mutate(id=as.character(id)), dodgr_net = gr[gr$component%in%v,], lines_way_id = "id")
+toc()
+
+p <- ggplot(data=gr[gr$component%in%v,]) +
+  geom_segment(aes(x=from_lon, y=from_lat, xend = to_lon, yend = to_lat, color=factor(component)))+
+  geom_sf(data=tmp2$artificial_edges)+
+  geom_sf(data=tmp2s$artificial_edges, color="purple")
+p
+
+
+
+
+w <- weighting_profiles$weighting_profiles%>%filter(name=="motorcar")%>%
+  bind_rows(tibble(name="motorcar", way="artificial", value=.5, max_speed=5))
+
+tmp3 <- tmp2$complete_network%>%mutate(id=coalesce(way_id,id))
+gr2 <- weight_streetnet (tmp3, wt_profile = w, id_col = "id")
+table(gr2$component)%>%prop.table%>%head
+tmp3 <- tmp3%>%st_simplify(dTolerance = .001)%>%m2poly()
+gr2 <- weight_streetnet (tmp3, wt_profile = w, id_col = "id")
+table(gr2$component)%>%prop.table%>%head
+tmp3 <- rmapshaper::ms_simplify(tmp3, keep = 0.99,keep_shapes = TRUE)%>%m2poly()
+tmp3 <- tmp3[as.numeric(st_length(tmp3$geometry))!=0,]
+gr2 <- weight_streetnet (tmp3, wt_profile = w, id_col = "id")
+table(gr2$component)%>%prop.table%>%head
+
+
+p <- ggplot(data=gr2[gr2$component>1,]) +
+  geom_segment(aes(x=from_lon, y=from_lat, xend = to_lon, yend = to_lat, color=factor(component)))+
+  geom_sf(data=tmp2$artificial_edges)
+p
+p+geom_point(data=gr[gr$way_id=="1037",][1,], aes(x=from_lon, y=from_lat), size=3, color=scales::alpha("red",.1))
+
+# bb <- st_bbox(tmp2$complete_network)
+# p <- ggmap::get_map(location = dodgr_vertices(gr)%>%select(lon=x,lat=y), source = "google", maptype = "roadmap", zoom = 6)
+# ggmap::ggmap(p)+
+#   geom_point(aes(x=from_lon, y=from_lat, color=factor(component)), data=gr[gr$component%in%v,], pch=".")+
+#   geom_path(data=as_tibble(st_coordinates(tmp2$artificial_edges))%>%rename(lon=X, lat=Y)%>%mutate(feature_id=rep(1:(n()/2), each=2)), aes(group=feature_id))
+
+
+
+
+
+
+
 visualize_network_connections(tmp2$complete_network, tmp2$artificial_edges, id_roads = "id")
-bb <- st_bbox(tmp2$complete_network)
-p <- ggmap::get_map(location = dodgr_vertices(gr)%>%select(lon=x,lat=y), source = "google", maptype = "roadmap", zoom = 6)
-ggmap::ggmap(p)+
-  geom_point(aes(x=from_lon, y=from_lat, color=factor(component)), data=gr[gr$component%in%v,], pch=".")+
-  geom_path(data=as_tibble(st_coordinates(tmp2$artificial_edges))%>%rename(lon=X, lat=Y)%>%mutate(feature_id=rep(1:(n()/2), each=2)), aes(group=feature_id))
 
 stop()
 

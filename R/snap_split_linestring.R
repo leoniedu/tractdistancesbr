@@ -72,7 +72,7 @@ snap_split_linestring <- function(linestring_sf, point_sf,
   min_dist <- min(distances)
 
   if (as.numeric(min_dist) > 0) {
-    warning(sprintf("Input point is %g units away from nearest resulting segment",
+    cli::cli_alert(sprintf("Input point is %g units away from nearest resulting segment",
                     as.numeric(min_dist)))
   }
 
