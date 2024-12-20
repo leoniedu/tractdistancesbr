@@ -116,10 +116,6 @@ connect_components_simple <- function(lines_sf,
       artificial_lines[[conn_id]][[new_way_id]] <- conn_id
 
       conn_counter <- conn_counter + 1
-
-      if(track_memory && i %% 100 == 0) {
-        track_mem(sprintf("after processing %d component pairs", i))
-      }
     }
   }
 
@@ -133,6 +129,7 @@ connect_components_simple <- function(lines_sf,
                                            mode = "undirected")
   mst <- igraph::mst(g)
   edge_list <- igraph::as_edgelist(mst)
+
 
   # Clean up large objects no longer needed
   rm(distances, g, mst)

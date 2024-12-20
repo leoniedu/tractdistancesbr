@@ -172,7 +172,6 @@ connect_network_components <- function(lines_sf,
 
   # Find minimum spanning tree
   track_mem("before MST")
-  browser()
   g <- igraph::graph_from_adjacency_matrix(distances, weighted = TRUE, mode = "undirected")
   mst <- igraph::mst(g)
   edge_list <- igraph::as_edgelist(mst)
