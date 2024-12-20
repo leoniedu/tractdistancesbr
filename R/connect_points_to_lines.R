@@ -24,33 +24,23 @@ connect_points_to_lines <- function(points_sf, lines_sf,
     stop("lines_sf must have a 'highway' column")
   }
 
-  # Validate connection_type exists in highway values
-  existing_types <- unique(lines_sf$highway)
-  if (!connection_type %in% existing_types) {
-    stop(sprintf("connection_type '%s' is not found in existing highway types: %s",
-                 connection_type,
-                 paste(existing_types, collapse = ", ")))
-  }
-
   # Ensure same CRS
   if (sf::st_crs(points_sf) != sf::st_crs(lines_sf)) {
     points_sf <- sf::st_transform(points_sf, sf::st_crs(lines_sf))
   }
 
-  # Add new ID column to original lines if it doesn't exist
-  if (!new_id_column %in% names(lines_sf)) {
-    lines_sf[[new_id_column]] <- seq_len(nrow(lines_sf))
-  }
+  # Add temporary internal ID column
+  internal_id <- "temp_internal_id"
+  lines_sf[[internal_id]] <- seq_len(nrow(lines_sf))
+  next_id <- nrow(lines_sf) + 1
 
   # Initialize list for new lines
   processed_lines <- list()
-  next_id <- max(lines_sf[[new_id_column]]) + 1
   lines_to_remove <- integer()
 
   # Process each point
   for (i in 1:nrow(points_sf)) {
     point <- points_sf[i,]
-
     # Find nearest point on lines
     nearest_lines <- sf::st_nearest_points(point, lines_sf)
     min_idx <- which.min(sf::st_length(nearest_lines))
@@ -72,10 +62,10 @@ connect_points_to_lines <- function(points_sf, lines_sf,
       sf::st_geometry(connection) <- sf::st_sfc(nearest_lines[min_idx],
                                                 crs = sf::st_crs(lines_sf))
 
-      # Update IDs and attributes
-      segment1[[new_id_column]] <- next_id
-      segment2[[new_id_column]] <- next_id + 1
-      connection[[new_id_column]] <- next_id + 2
+      # Update internal IDs
+      segment1[[internal_id]] <- next_id
+      segment2[[internal_id]] <- next_id + 1
+      connection[[internal_id]] <- next_id + 2
       next_id <- next_id + 3
 
       # Update highway type only for connection
@@ -100,9 +90,22 @@ connect_points_to_lines <- function(points_sf, lines_sf,
       lines_sf[!seq_len(nrow(lines_sf)) %in% lines_to_remove,],
       new_lines_sf
     )
+
+    # Create new ID column if needed
+    if (!new_id_column %in% names(updated_lines)) {
+      updated_lines[[new_id_column]] <- updated_lines[[internal_id]]
+    }
+
+    # Remove temporary internal ID
+    updated_lines[[internal_id]] <- NULL
+
   } else {
     warning("No lines were successfully processed")
     updated_lines <- lines_sf
+    # Create new ID column if needed
+    if (!new_id_column %in% names(updated_lines)) {
+      updated_lines[[new_id_column]] <- seq_len(nrow(updated_lines))
+    }
   }
 
   return(updated_lines)

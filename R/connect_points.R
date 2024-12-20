@@ -64,15 +64,15 @@ connect_points <- function(streets, points, max_distance = Inf,
         point <- sf::st_sf(geometry = shared_data$points_geom[i])
 
         # Calculate distance
-        dist <- min(sf::st_distance(point, shared_data$streets))
+        dist <- sf::st_distance(point, shared_data$streets)
 
-        if (dist > shared_data$max_distance) {
+        if (min(dist) > shared_data$max_distance) {
           warning(sprintf("Point %d is farther than max_distance from nearest road", i))
           return(NULL)
         }
 
         # Find nearest street
-        nearest_idx <- which.min(sf::st_distance(point, shared_data$streets))
+        nearest_idx <- which.min(dist)
         nearest_street <- shared_data$streets[nearest_idx,]
         nearest_line <- sf::st_cast(sf::st_nearest_points(point, nearest_street)[1], "LINESTRING")
 

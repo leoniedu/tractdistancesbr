@@ -6,6 +6,7 @@ source("data-raw/000.R")
 gr <- dodgr_load_streetnet(fname_graph)
 mc <- readr::read_rds(fname_highway_rds)
 
+
 comps <- prop.table(table(gr$component))
 ccomps <- cumsum(comps)
 
@@ -23,12 +24,31 @@ tic()
 tmp2s <- connect_components_simple(lines_sf = mc%>%mutate(id=as.character(id)), dodgr_net = gr[gr$component%in%v,], lines_way_id = "id")
 toc()
 
+stop()
+waterways_sf <- readr::read_rds(fname_waterway_rds)
+tracts_points <- orce::pontos_setores%>%semi_join(tracts%>%sf::st_drop_geometry())%>%
+  distinct(setor, .keep_all = TRUE)
+
+
 p <- ggplot(data=gr[gr$component%in%v,]) +
+  geom_sf(data=waterways_sf, color="lightblue", alpha=.8)+
   geom_segment(aes(x=from_lon, y=from_lat, xend = to_lon, yend = to_lat, color=factor(component)))+
-  geom_sf(data=tmp2$artificial_edges)+
-  geom_sf(data=tmp2s$artificial_edges, color="purple")
+  geom_sf(data=tmp2s$artificial_edges, color="purple", linetype=2) +
+  geom_sf(data=tracts_points, pch="*")
 p
 
+##testing point connections
+tmp <- connect_points(points = tracts_points%>%head(10), streets = tmp2s$complete_network, street_id_col = "new_id", point_id_col = "setor", waterways = waterways_sf)%>%filter(distance_to_street>1000)
+
+d <- tmp%>%arrange(desc(distance_to_street))%>%slice(10)
+bb <- st_bbox(d)
+#p <- ggplot(data=tmp%>%arrange(desc(distance_to_street))%>%slice(1))+
+p <- ggplot(data=d)+
+  geom_sf(data=waterways_sf, color="lightblue", alpha=.8)+
+  geom_segment(aes(x=from_lon, y=from_lat, xend = to_lon, yend = to_lat, color=factor(component)), data=gr)+
+  geom_sf(data=d, color="purple", linetype=2) +
+  geom_sf(data=tracts_points)+  coord_sf(xlim=bb[c(1,3)], ylim=bb[c(2,4)])
+p
 
 
 
@@ -79,7 +99,7 @@ library(furrr)
 plan(multisession, workers = 4)
 
 
-waterways_sf <- readr::read_rds(fname_waterway_rds)
+
 
 
 
@@ -109,8 +129,6 @@ tracts <- tracts_br_2022%>%
 rm(tracts_br_2022)
 gc()
 
-tracts_points <- orce::pontos_setores%>%semi_join(tracts%>%sf::st_drop_geometry())%>%
-  distinct(setor, .keep_all = TRUE)
 
 
 gc()
