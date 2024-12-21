@@ -22,15 +22,11 @@ test_that("split_and_connect_lines handles basic line-to-line connection", {
     point2_sf <- st_sf(geometry = st_sfc(point2, crs = 4326))
 
     result <- split_and_connect_lines(
-        line1_sf = line1_sf, point1_sf = point1_sf, point2_sf = point2_sf, line2_sf = line2_sf,
-        connection_id = "test_conn"
-    )
+        line1_sf = line1_sf, point1_sf = point1_sf, point2_sf = point2_sf, line2_sf = line2_sf)
 
     # Tests
     expect_s3_class(result, "sf")
-    expect_true("connection_id" %in% names(result))
     expect_true("artificial" %in% names(result))
-    expect_true(any(result$connection_id == "test_conn"))
     expect_true(any(result$artificial))
 
     # Should have 5 features: 2 segments from line1, 2 from line2, 1 connection
@@ -52,9 +48,7 @@ test_that("split_and_connect_lines handles line-to-point connection", {
     point2_sf <- st_sf(geometry = st_sfc(point2, crs = 4326))
 
     result <- split_and_connect_lines(
-        line1_sf, point1_sf, point2_sf,
-        connection_id = "test_conn"
-    )
+        line1_sf, point1_sf, point2_sf)
 
     # Should have 3 features: 2 segments from line1, 1 connection
     expect_equal(nrow(result), 3)
@@ -79,13 +73,11 @@ test_that("split_and_connect_lines preserves attributes", {
 
     result <- split_and_connect_lines(
         line1_sf, point1_sf, point2_sf,
-        connection_id = "test_conn",
         surface = "paved"
     )
 
     # Check original attributes are preserved in segments
-    segments <- result[!result$artificial,]
-    expect_equal(unique(segments$way_id), 1)
+    segments <- result[-which(result$artificial),]
     expect_equal(unique(segments$name[!is.na(segments$name)]), "Main St")
     expect_equal(unique(segments$lanes[!is.na(segments$lanes)]), 2)
 
@@ -182,7 +174,6 @@ test_that("split_and_connect_lines handles additional attributes via ...", {
 
     result <- split_and_connect_lines(
         line1_sf, point1_sf, point2_sf,
-        connection_id = "test_conn",
         highway = "path",
         speed_limit = 30,
         surface = "paved",

@@ -1,6 +1,6 @@
 snap_split_linestring <- function(linestring_sf, point_sf,
-                                  initial_buffer = 1e-9,
-                                  buffer_factor = 10) {
+                                  initial_buffer = 1e-8,
+                                  buffer_factor = 10, verbose=FALSE) {
   # Validate number of features in inputs
   if (nrow(linestring_sf) > 1) {
     warning("Multiple linestrings provided. Only the first will be used.")
@@ -71,7 +71,7 @@ snap_split_linestring <- function(linestring_sf, point_sf,
   distances <- sf::st_distance(point_sf, result)
   min_dist <- min(distances)
 
-  if (as.numeric(min_dist) > 0) {
+  if (verbose && (as.numeric(min_dist) > 0.0001)) {
     cli::cli_alert(sprintf("Input point is %g units away from nearest resulting segment",
                     as.numeric(min_dist)))
   }

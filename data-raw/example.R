@@ -1,29 +1,62 @@
 library(dodgr)
 
+
+
 devtools::load_all()
 
-graph <- weight_streetnet (hampi, wt_profile = "foot")
-table (graph$component)
-
-map_connected <- connect_network_components(lines_sf = hampi, dodgr_net = graph, way_id_column = "osm_id")
-
-map_connected_s <- connect_components_simple(lines_sf = hampi, dodgr_net = graph)
-
-library(ggplot2)
-ggplot(data=hampi%>%left_join(graph%>%as_tibble()%>%select(osm_id=way_id, component))) +
-  geom_sf(aes(color=factor(component))) +
-  geom_sf(data=map_connected$artificial_edges, color="purple")+
-  geom_sf(data=map_connected_s$artificial_edges, color="orange", linewidth=2)
-
+#seed <- .Random.seed
 
 w <- weighting_profiles$weighting_profiles%>%filter(name=="foot")%>%
   bind_rows(tibble(name="foot", way="artificial", value=.1, max_speed=.5))
 
-graph_connected <- weight_streetnet (map_connected$complete_network, wt_profile = w)
 
-ggplot(data=map_connected$complete_network) +
+pts <- st_sample(hampi%>%st_bbox(), size=150)%>%st_cast("POINT")%>%st_as_sf()
+
+graph <- weight_streetnet (hampi, wt_profile = w, id_col = "osm_id")
+
+map_connected_0 <- connect_network_components(lines_sf = hampi, dodgr_net = graph, way_id_column = "osm_id")
+
+
+hampic <- connect_points_to_network(lines_sf = map_connected_0$complete_network, points_sf = pts, way_id_column = "id")
+
+
+##FIX
+## when osm_id exists weight_streetnet uses it even with a different id_col specification
+weight_streetnet_fix <- function(x, ..., id_col="osm_id") {
+  if (id_col!="osm_id") {
+    if ("osm_id"%in%colnames(x)) {
+      x$osm_id <- NULL
+    }
+  }
+  weight_streetnet(x=x, ..., id_col=id_col)
+}
+
+graphc <- weight_streetnet_fix(x=hampic$complete_network, id_col = "id", wt_profile=w)
+
+
+
+library(tictoc)
+
+tic()
+map_connected_1 <- connect_network_components(lines_sf = hampic$complete_network, dodgr_net = graphc, way_id_column = "id")
+
+
+map_connected_p <- connect_points_to_network(lines_sf = map_connected_1$complete_network, points_sf = pts, way_id_column = "id")
+
+graphcp <- weight_streetnet_fix(x=map_connected_p$complete_network, id_col = "id", wt_profile=w)
+
+
+path <- dodgr::dodgr_paths(graphcp, from = st_coordinates(pts[1,]), to=st_coordinates(pts[2,]), vertices=FALSE)
+
+library(ggplot2)
+ggplot(data=map_connected_p$complete_network) +
   geom_sf() +
-  geom_sf(data=map_connected$artificial_edges, color="purple", linewidth=3)
+  geom_sf(data=map_connected_p$artificial_edges, color="purple", linewidth=1)+
+  geom_sf(data=pts) +
+  #geom_sf(data=cp$artificial_edges, color="red", linetype=2)+
+  geom_sf(data=pts[1:2, ], color="red", size=3)+
+  geom_segment(data=graphcp[unlist(path),], color="red", linewidth=3, alpha=1/3,
+              aes(x=from_lon, y=from_lat, xend=to_lon, yend=to_lat))
 
 
 

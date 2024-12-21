@@ -12,7 +12,7 @@
 #'   - way_id: matching the way_ids in lines_sf (typically OSM IDs)
 #'   - component: component identifiers
 #'   - from_id/to_id: vertex identifiers
-#' @param connection_type Character string specifying the highway type for new connections
+#' @param highway_type Character string specifying the highway type for new connections
 #' @param way_id_column Name of the column in lines_sf containing original way IDs (typically OSM IDs)
 #' @param track_memory Logical; whether to track memory usage
 #'
@@ -24,8 +24,8 @@
 #' @export
 connect_network_components <- function(lines_sf,
                                        dodgr_net,
-                                       connection_type = "artificial",
-                                       way_id_column = "way_id",
+                                       highway_type = "artificial",
+                                       way_id_column = "osm_id",
                                        track_memory = TRUE) {
 
   track_mem <- function(step) {
@@ -77,8 +77,6 @@ connect_network_components <- function(lines_sf,
   # Calculate distances and find connections
   distances <- matrix(Inf, n_components, n_components)
   connections <- list()
-
-  track_mem("before distance calculations")
 
   for(i in 1:(n_components-1)) {
     for(j in (i+1):n_components) {
@@ -151,12 +149,11 @@ connect_network_components <- function(lines_sf,
         point1_sf = st_as_sf(point1),
         point2_sf = st_as_sf(point2),
         line2_sf = comp_j_lines[nearest_j_line_idx,],
-        connection_id = paste0("CONN_", i, "_", j),
-        highway = connection_type
+        highway = highway_type
       )
 
       # Store connection info
-      connection_geom <- connection_result[connection_result$artificial,]
+      connection_geom <- connection_result[ is.na(connection_result[[way_id_column]]),]
       connections[[paste(i,j)]] <- list(
         from_component = components[i],
         to_component = components[j],
@@ -164,14 +161,12 @@ connect_network_components <- function(lines_sf,
         distance = st_length(connection_geom),
         connection_result = connection_result
       )
-
       distances[i,j] <- distances[j,i] <- st_length(connection_geom)
     }
   }
   track_mem("after distances")
 
   # Find minimum spanning tree
-  track_mem("before MST")
   g <- igraph::graph_from_adjacency_matrix(distances, weighted = TRUE, mode = "undirected")
   mst <- igraph::mst(g)
   edge_list <- igraph::as_edgelist(mst)
@@ -199,7 +194,6 @@ connect_network_components <- function(lines_sf,
   track_mem("after processing connections")
 
   if(length(all_segments) > 0) {
-    track_mem("before final combining")
 
     # Combine all segments
     complete_network <- do.call(rbind, all_segments)
@@ -208,8 +202,7 @@ connect_network_components <- function(lines_sf,
     # Add remaining unmodified lines
     modified_way_ids <- unique(complete_network$way_id)
     unmodified_lines <- lines_sf[!lines_sf[[way_id_column]] %in% modified_way_ids,]
-    complete_network <- bind_rows(complete_network, unmodified_lines)
-
+    complete_network <- bind_rows(complete_network, unmodified_lines)%>%mutate(id=as.character(1:n()))
     track_mem("after final combining")
   } else {
     warning("No lines were successfully processed")
@@ -220,7 +213,7 @@ connect_network_components <- function(lines_sf,
   track_mem("end")
 
   return(list(
-    complete_network = complete_network,
+    complete_network = complete_network%>%mutate(artificial=coalesce(artificial,FALSE)),
     artificial_edges = artificial_edges
   ))
 }
