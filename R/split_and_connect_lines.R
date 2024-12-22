@@ -22,8 +22,11 @@
 split_and_connect_lines <- function(line1_sf, point1_sf, point2_sf,
                                     line2_sf = NULL,
                                     highway = "artificial",
+                                    edge_marker_col,
                                     ...) {
-    # Validation checks remain the same...
+    if(is.null(edge_marker_col)) {
+        stop("edge_marker_col is required to track new edges")
+    }
     if (!inherits(line1_sf, "sf")) {
         stop("line1_sf must be an sf object")
     }
@@ -66,6 +69,8 @@ split_and_connect_lines <- function(line1_sf, point1_sf, point2_sf,
 
     # Split first line - all attributes are preserved
     segments1 <- snap_split_linestring(line1_sf, point1_sf)
+    # Mark as not new
+    segments1[[edge_marker_col]] <- FALSE
     new_lines <- c(new_lines, list(segments1))
 
     # Create connection line
@@ -80,20 +85,23 @@ split_and_connect_lines <- function(line1_sf, point1_sf, point2_sf,
         geometry = st_sfc(connection_geom, crs = st_crs(line1_sf)),
         way_id = NA,  # No way_id for artificial connection
         highway = highway,
-        artificial = TRUE,
+        artificial = TRUE,  # This might exist in the input but we know this is a new edge
         ...
     )
+    # Mark as new
+    connection[[edge_marker_col]] <- TRUE
 
     # Process second line if provided
     if (!is.null(line2_sf)) {
         segments2 <- snap_split_linestring(line2_sf, point2_sf)
+        # Mark as not new
+        segments2[[edge_marker_col]] <- FALSE
         new_lines <- c(new_lines, list(segments2))
     }
 
     # Add connection and combine all
     new_lines <- c(new_lines, list(connection))
-    result <- bind_rows(new_lines)%>%
-        mutate(artificial=coalesce(artificial,FALSE))
+    result <- bind_rows(new_lines)
 
     return(result)
 }
