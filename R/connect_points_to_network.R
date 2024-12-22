@@ -85,12 +85,13 @@ connect_points_to_network <- function(lines_sf,
       point1_sf = current_point,
       point2_sf = st_as_sf(connection_point),
       line2_sf = nearest_line,  # Same line since we're just splitting it
-      highway = highway_type
+      highway = highway_type,
+      edge_marker_col="point_connections"
     )
 
     # Store results
     all_segments[[i]] <- connection_result
-    artificial_segments[[i]] <- connection_result[connection_result$artificial,]
+    artificial_segments[[i]] <- connection_result[connection_result$point_connections,]
   }
 
   track_mem("after processing points")
@@ -118,7 +119,7 @@ connect_points_to_network <- function(lines_sf,
 
   return(list(
     complete_network = complete_network %>%
-      mutate(artificial = coalesce(artificial, FALSE), id=as.character(1:n())),
+      mutate(id=as.character(1:n())),
     artificial_edges = artificial_edges,
     connection_points = connection_points_sf
   ))

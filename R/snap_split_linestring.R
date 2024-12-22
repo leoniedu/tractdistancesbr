@@ -1,7 +1,7 @@
 snap_split_linestring <- function(linestring_sf, point_sf,
-                                  initial_buffer = 1e-8,
+                                  initial_buffer = 1e-9,
                                   buffer_factor = 10,
-                                  verbose = FALSE) {
+                                  verbose = FALSE, min_line_length=10) {
   # Validate number of features in inputs
   if (nrow(linestring_sf) > 1) {
     warning("Multiple linestrings provided. Only the first will be used.")
@@ -25,10 +25,18 @@ snap_split_linestring <- function(linestring_sf, point_sf,
     stop("Linestring and point must have the same CRS")
   }
 
+  ##Validate minimum line length
+  units(min_line_length) <-  "m"
+  if (st_length(linestring_sf) < min_line_length) {
+    return(linestring_sf)
+  }
+
+
   # Get the linestring coordinates
   line_coords <- sf::st_coordinates(linestring_sf)[,1:2]
   start_point <- line_coords[1,]
   end_point <- line_coords[nrow(line_coords),]
+
 
   # Find the point on the linestring via nearest points
   nearest_pt_line <- sf::st_nearest_points(linestring_sf, point_sf)
@@ -54,6 +62,7 @@ snap_split_linestring <- function(linestring_sf, point_sf,
   current_buffer <- initial_buffer
   n_segments <- 1  # Initialize to trigger while loop
 
+
   while (n_segments < 2) {
     # Create buffer around the split point
     buffer_point <- sf::st_buffer(split_point_sf, dist = current_buffer)
@@ -65,6 +74,7 @@ snap_split_linestring <- function(linestring_sf, point_sf,
 
     # Increase buffer for next iteration if needed
     current_buffer <- current_buffer * buffer_factor
+    #if(current_buffer>.5) browser()
   }
 
   # Keep first segment, union the rest if needed
