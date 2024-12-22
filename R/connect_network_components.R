@@ -48,6 +48,17 @@ connect_network_components <- function(lines_sf,
   if(!"component" %in% names(dodgr_net))
     stop("dodgr_net must have a component column")
 
+  # Initialize artificial column if it doesn't exist
+  if(!"artificial" %in% names(lines_sf)) {
+    lines_sf$artificial <- FALSE
+  }
+
+  # Create a guaranteed unique column name at the start
+  make_unique_colname <- function(df, prefix = "tmp") {
+    make.unique(c(names(df), prefix))[length(names(df)) + 1]
+  }
+  edge_marker_col <- make_unique_colname(lines_sf, "new_edge")
+
   # Filter lines_sf to only include ways present in dodgr_net
   lines_sf <- lines_sf %>%
     semi_join(data.frame(way_id = unique(dodgr_net$way_id)),
@@ -78,6 +89,7 @@ connect_network_components <- function(lines_sf,
   distances <- matrix(Inf, n_components, n_components)
   connections <- list()
 
+  # Process components and create connections using the same edge_marker_col
   for(i in 1:(n_components-1)) {
     for(j in (i+1):n_components) {
       comp_i <- components[i]
@@ -149,11 +161,12 @@ connect_network_components <- function(lines_sf,
         point1_sf = st_as_sf(point1),
         point2_sf = st_as_sf(point2),
         line2_sf = comp_j_lines[nearest_j_line_idx,],
-        highway = highway_type
+        highway = highway_type,
+        edge_marker_col = edge_marker_col  # Pass our unique column name
       )
 
-      # Store connection info
-      connection_geom <- connection_result[ is.na(connection_result[[way_id_column]]),]
+      # Store connection info - now using our marker column to identify new edges
+      connection_geom <- connection_result[connection_result[[edge_marker_col]],]
       connections[[paste(i,j)]] <- list(
         from_component = components[i],
         to_component = components[j],
@@ -194,15 +207,26 @@ connect_network_components <- function(lines_sf,
   track_mem("after processing connections")
 
   if(length(all_segments) > 0) {
-
     # Combine all segments
     complete_network <- do.call(rbind, all_segments)
-    artificial_edges <- do.call(rbind, artificial_segments)
+
+    # Identify artificial edges using our marker
+    artificial_edges <- complete_network[complete_network[[edge_marker_col]],]
 
     # Add remaining unmodified lines
     modified_way_ids <- unique(complete_network$way_id)
     unmodified_lines <- lines_sf[!lines_sf[[way_id_column]] %in% modified_way_ids,]
-    complete_network <- bind_rows(complete_network, unmodified_lines)%>%mutate(id=as.character(1:n()))
+    unmodified_lines[[edge_marker_col]] <- FALSE
+
+    # Combine and update artificial status
+    complete_network <- bind_rows(complete_network, unmodified_lines) %>%
+      mutate(
+        id = as.character(1:n()),
+        # Update artificial status only for new edges
+        artificial = if_else(.data[[edge_marker_col]], TRUE, artificial)
+      ) %>%
+      select(-all_of(edge_marker_col))  # Remove our temporary column
+
     track_mem("after final combining")
   } else {
     warning("No lines were successfully processed")
@@ -213,7 +237,7 @@ connect_network_components <- function(lines_sf,
   track_mem("end")
 
   return(list(
-    complete_network = complete_network%>%mutate(artificial=coalesce(artificial,FALSE)),
+    complete_network = complete_network,
     artificial_edges = artificial_edges
   ))
 }
