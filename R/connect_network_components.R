@@ -90,8 +90,15 @@ connect_network_components <- function(lines_sf,
   connections <- list()
 
   # Process components and create connections using the same edge_marker_col
+  cli::cli_alert(paste0("Calculating ", (n_components^2-n_components)/2, " distances"))
+  k <- 1
   for(i in 1:(n_components-1)) {
     for(j in (i+1):n_components) {
+      if (k%%10==0) {
+        cli::cli_alert(paste0(Sys.time(), ": Calculating distance ", k))
+      }
+      k <- k+1
+
       comp_i <- components[i]
       comp_j <- components[j]
 

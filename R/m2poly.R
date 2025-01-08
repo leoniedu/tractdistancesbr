@@ -56,10 +56,10 @@ m2poly <- function(m, geom_out = "POINT") {
   }
 
   # Identify geometry types
-  s <- sapply(m$geometry, function(z) class(z)[2])
+  s <- st_geometry_type(m)
 
   # Print summary of geometry types (useful for debugging)
-  type_counts <- table(s)
+  type_counts <- table(as.character(s))
   if (length(type_counts) > 0) {
     message("Input geometry types:")
     print(type_counts)
@@ -72,7 +72,7 @@ m2poly <- function(m, geom_out = "POINT") {
   # If there are geometries to convert
   if (nrow(mpoly) > 0) {
     # Convert to target geometry type
-    mpoly2lines <- try(sf::st_cast(mpoly, "LINESTRING"), silent = TRUE)
+    mpoly2lines <- try(sf::st_cast(mpoly, "LINESTRING"), silent = FALSE)
 
     if (inherits(mpoly2lines, "try-error")) {
       warning("Error converting some geometries to LINESTRING")
@@ -88,7 +88,36 @@ m2poly <- function(m, geom_out = "POINT") {
 
   # Clean up and add ID
   m <- janitor::remove_empty(m, which = "cols")
-  m$id <- seq_len(nrow(m))
+  m$id <- as.character(seq_len(nrow(m)))
 
   return(m)
+}
+
+
+
+st_simplify_net <- function(x, dTolerance=5) {
+  x_sf_simple <- st_simplify(x, dTolerance = {dTolerance})
+  x_sf_simple <- x_sf_simple[st_length(x_sf_simple)>units::set_units(0, "m"),]
+  x_sf_simple
+}
+
+st_extract_vertices <- function(x) {
+  split(x, as.character(sf::st_geometry_type(x)))%>%
+    lapply(spatialEco::extract.vertices)%>%
+    bind_rows()
+}
+
+
+
+load_pbf_parquet <- function(fname_pbf_parquet, window_filter, simplify=TRUE) {
+  mw <- arrow::open_dataset(fname_pbf_parquet)
+  mw <- mw%>%
+    st_as_sf()
+  if (!is.null(window_filter)) {
+    mw <- mw %>% filter(!!window_filter)
+  }
+  mw <- mw[st_geometry_type(mw)!="POINT",]
+  if (simplify) mw <- st_simplify_net(mw)
+  mw <- m2poly(mw)
+  mw
 }

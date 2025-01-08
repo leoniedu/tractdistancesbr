@@ -4,6 +4,7 @@ readr::write_rds(tracts, "data-raw/tracts_br_2022.rds")
 
 
 states_br <- geobr::read_state(year = 2020, code_state="all")
+readr::write_rds(states_br, "data-raw/br_states.rds")
 f <- function(x=bb_r[[1]], expand=2) {
   z <- as.numeric(x)
   ##min

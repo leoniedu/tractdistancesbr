@@ -2,7 +2,7 @@
 #'
 #' This function connects a set of points to a street network by creating artificial
 #' connections to the nearest network segments. It splits the original network segments
-#' at the connection points and adds new artificial edges.
+#' at the connection points and adds new artificial edges. Alternative to dodgr::add_nodes_to_graph
 #'
 #' @param lines_sf sf object containing the street network linestrings. Must have
 #'   a way_id column and a highway column.
@@ -54,6 +54,8 @@ connect_points_to_network <- function(lines_sf,
 
   # Process each point
   for(i in seq_len(nrow(points_sf))) {
+    print(i)
+    #browser()
     # Get current point
     current_point <- points_sf[i,]
 
@@ -84,10 +86,10 @@ connect_points_to_network <- function(lines_sf,
       line1_sf = nearest_line,
       point1_sf = current_point,
       point2_sf = st_as_sf(connection_point),
-      line2_sf = nearest_line,  # Same line since we're just splitting it
+      line2_sf = NULL,
       highway = highway_type,
       edge_marker_col="point_connections"
-    )
+    )#%>%mutate(component=component[1])
 
     # Store results
     all_segments[[i]] <- connection_result
