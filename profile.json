@@ -15,7 +15,7 @@
     {
       "way": "ferry",
       "max_speed": 5,
-      "value": 0.1,
+      "value": 0.05,
       "name": "motorcar"
     },
     {
@@ -135,19 +135,19 @@
     {
       "way": "artificial",
       "max_speed": 1,
-      "value": 0.05,
+      "value": 1e-05,
       "name": "motorcar"
     },
     {
       "way": "river",
-      "max_speed": 3,
-      "value": 0.075,
+      "max_speed": 2,
+      "value": 0.005,
       "name": "motorcar"
     },
     {
       "way": "canal",
-      "max_speed": 2,
-      "value": 0.06,
+      "max_speed": 1.5,
+      "value": 0.004,
       "name": "motorcar"
     }
   ],

@@ -20,3 +20,5 @@ Imports:
     osmextract,
     silicate,
     cli
+Depends: 
+    dplyr

@@ -109,7 +109,7 @@ st_extract_vertices <- function(x) {
 
 
 
-load_pbf_parquet <- function(fname_pbf_parquet, window_filter, simplify=TRUE) {
+load_pbf_parquet <- function(fname_pbf_parquet, window_filter, simplify=FALSE) {
   mw <- arrow::open_dataset(fname_pbf_parquet)
   mw <- mw%>%
     st_as_sf()

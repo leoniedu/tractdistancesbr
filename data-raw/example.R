@@ -14,9 +14,11 @@ pts <- st_sample(hampi%>%st_bbox(), size=150)%>%st_cast("POINT")%>%st_as_sf()
 
 graph <- weight_streetnet (hampi, wt_profile = w, id_col = "osm_id")
 
+
 map_connected_0 <- connect_network_components(lines_sf = hampi, dodgr_net = graph, way_id_column = "osm_id")
 
-
+##FIX: see function dodgr::add_nodes_to_graph instead of connect_points_to_network
+##add_nodes_to_graph(graph, xy, dist_tol = 0.000001, intersections_only = FALSE)
 hampic <- connect_points_to_network(lines_sf = map_connected_0$complete_network, points_sf = pts, way_id_column = "id")
 
 
@@ -50,7 +52,7 @@ path <- dodgr::dodgr_paths(graphcp, from = st_coordinates(pts[1,]), to=st_coordi
 
 library(ggplot2)
 ggplot(data=map_connected_p$complete_network) +
-  geom_sf() +
+  geom_sf(aes(color=artificial)) + scale_color_manual(values=c("black", "pink"))+
   geom_sf(data=map_connected_p$artificial_edges, color="purple", linewidth=1)+
   geom_sf(data=pts) +
   #geom_sf(data=cp$artificial_edges, color="red", linetype=2)+

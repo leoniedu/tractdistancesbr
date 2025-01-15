@@ -1,11 +1,22 @@
-ufsiglanow <- "ap"
+## to get .parquet have to use python
+## uv run python3.9
+## import convert2geopacket.py
+## Important from commandline directly (e.g.  uv run convert2geopacket.py) will fail due to parallel processing problems
+
+## TODO
+## check ids when splitting and connecting
+## check what happens when splitting lines when points connected to the same edge (line)
+## vertice selection different from ll when calculating distances
+
+ufsiglanow <- "am"
 library(dodgr)
 library(ggplot2)
 library(sf)
 library(dplyr)
 devtools::load_all()
+dodgr_cache_off()
 
-
+valid_waterways <- c("river", "canal")
 
 #https://download.geofabrik.de/south-america/brazil/norte-latest.osm.pbf
 ufnow <- orce::ufs%>%dplyr::filter(grepl(ufsiglanow, uf_sigla, ignore.case=TRUE))
@@ -38,8 +49,8 @@ wibge$weighting_profiles <-
   rows_upsert(
     bind_rows(
       tibble(way=c("artificial", "river", "canal", "ferry"),
-             value=c(.05,.075,.06,.1),
-             max_speed=c(1,3,2,5))), "way")%>%
+             value=c(.00001,.005,.004,.05),
+             max_speed=c(1,2,1.5,5))), "way")%>%
   mutate(name="motorcar")%>%
   ungroup()
 wibge$surface_speeds <- weighting_profiles$surface_speeds%>%

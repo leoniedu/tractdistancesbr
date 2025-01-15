@@ -37,7 +37,7 @@ add_nodes_to_graph_labeled <- function(graph, xy, dist_tol = 0.000001,
   }
 
   # Validate highway type
-  if (is.null(wt_profile_df$weights[[highway_type]])) {
+  if (sum(wt_profile_df$weighting_profiles$way==highway_type)==0) {
     stop("Specified highway_type does not exist in the weight profile")
   }
 
@@ -74,17 +74,16 @@ add_nodes_to_graph_labeled <- function(graph, xy, dist_tol = 0.000001,
 
   calculate_weights <- function(d, highway_type = "path",
                                 is_oneway = FALSE, gradient = 0) {
-    wt <- wt_profile_df$weights[[highway_type]]
-    if (is.null(wt)) wt <- wt_profile_df$weights$path
+    wt <- wt_profile_df$weighting_profiles%>%
+      filter(way==highway_type)
+    # if (is_oneway && !is.null(wt_profile_df$penalties$oneway)) {
+    #   wt <- wt * wt_profile_df$penalties%>%filter(way==highway_type)%>%pull(oneway)
+    # }
 
-    if (is_oneway && !is.null(wt_profile_df$penalties$oneway)) {
-      wt <- wt * wt_profile_df$penalties$oneway
-    }
-
-    if (gradient != 0 && !is.null(wt_profile_df$penalties$gradient)) {
-      grad_penalty <- wt_profile_df$penalties$gradient
-      wt <- wt * (1 + abs(gradient) * grad_penalty)
-    }
+    # if (gradient != 0 && !is.null(wt_profile_df$penalties$gradient)) {
+    #   grad_penalty <- wt_profile_df$penalties$gradient
+    #   wt <- wt * (1 + abs(gradient) * grad_penalty)
+    # }
 
     list(
       d_weighted = d * wt,

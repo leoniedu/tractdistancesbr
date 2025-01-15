@@ -22,6 +22,7 @@
 connect_points_to_network <- function(lines_sf,
                                       points_sf,
                                       max_distance = Inf,
+                                      min_distance = 5,
                                       highway_type = "artificial",
                                       way_id_column = "osm_id",
                                       track_memory = TRUE) {
@@ -33,9 +34,12 @@ connect_points_to_network <- function(lines_sf,
     gc(verbose = track_memory)
   }
 
+  ## FIX:: are from/to/edge ids correctly being taken care of?
+
   track_mem("start")
 
   max_distance <- units::set_units(max_distance, "m")
+  min_distance <- units::set_units(min_distance, "m")
 
   # Basic validation
   if(!"highway" %in% names(lines_sf))
@@ -46,40 +50,33 @@ connect_points_to_network <- function(lines_sf,
   # Ensure same CRS
   current_crs <- st_crs(lines_sf)
   points_sf <- st_transform(points_sf, current_crs)
-
-  # Initialize lists to store results
-  all_segments <- list()
-  artificial_segments <- list()
-  connection_points <- list()
-
+  nf <- st_nearest_feature(points_sf, lines_sf)
+  track_mem("after calculating nearest lines")
+  if ((min_distance>units::set_units(0, "m"))|(is.finite(max_distance))) {
+    cli::cli_inform("Checking distance for {nrow(points_sf)} points.")
+    nf_dist <- st_distance(points_sf,lines_sf[nf,], by_element = TRUE)
+    track_mem("after calculating distances")
+    nf_d <- (nf_dist<max_distance)&(nf_dist>min_distance)
+    points_sf <- points_sf[nf_d,]
+    nf <- nf[nf_d]
+    cli::cli_inform("{nrow(points_sf)} points remaining within ({min_distance},{max_distance}] meters to lines.")
+  }
+  track_mem("before creating segments")
   # Process each point
-  for(i in seq_len(nrow(points_sf))) {
-    print(i)
+  segments <- furrr::future_map(.x=seq_len(nrow(points_sf)), .f=function(i) {
     #browser()
     # Get current point
     current_point <- points_sf[i,]
 
     # Find nearest line segment
-    nearest_line_idx <- st_nearest_feature(current_point, lines_sf)
+    nearest_line_idx <- nf[i]
     nearest_line <- lines_sf[nearest_line_idx,]
-
-    # Calculate distance to nearest line
-    distance <- st_distance(current_point, nearest_line)
-
-    # Skip if distance exceeds maximum
-    if(distance > max_distance) {
-      warning(sprintf("Point %d exceeds maximum distance", i))
-      next
-    }
 
     # Find exact connection point on the line
     connection_point <- st_nearest_points(current_point, nearest_line) %>%
       st_cast("POINT") %>%
       .[2] %>%  # Second point is on the line
       st_sfc(crs = current_crs)
-
-    # Store connection point
-    connection_points[[i]] <- st_as_sf(connection_point)
 
     # Split and connect the line
     connection_result <- split_and_connect_lines(
@@ -91,25 +88,30 @@ connect_points_to_network <- function(lines_sf,
       edge_marker_col="point_connections"
     )#%>%mutate(component=component[1])
 
-    # Store results
-    all_segments[[i]] <- connection_result
-    artificial_segments[[i]] <- connection_result[connection_result$point_connections,]
-  }
-
+    # Return results
+    list(all_segments=connection_result, artificial_segments=connection_result[connection_result$point_connections,], connection_points=st_as_sf(connection_point))
+  }, .progress = TRUE, .options=furrr::furrr_options(seed = TRUE))
   track_mem("after processing points")
-
+  all_segments <- lapply(segments, function(x) x[["all_segments"]])
+  artificial_segments <- lapply(segments, function(x) x[["artificial_segments"]])
+  connection_points <- lapply(segments, function(x) x[["connection_points"]])
   if(length(all_segments) > 0) {
     # Combine all segments
     complete_network <- do.call(rbind, all_segments)
+    rm(all_segments)
     artificial_edges <- do.call(rbind, artificial_segments)
+    rm(artificial_segments)
     connection_points_sf <- do.call(rbind, connection_points)
+    rm(connection_points)
+    track_mem("after final combining")
 
     # Add remaining unmodified lines
+    # FIX: what happens when the same edge is closest to more than one point?
+    # rough solution: add original lines which were splitted back to the map,
+    # rough solution2: add original lines which were splitted *more than once* back to the map,
     modified_way_ids <- unique(complete_network$way_id)
     unmodified_lines <- lines_sf[!lines_sf[[way_id_column]] %in% modified_way_ids,]
     complete_network <- bind_rows(complete_network, unmodified_lines)
-
-    track_mem("after final combining")
   } else {
     warning("No points were successfully connected")
     complete_network <- lines_sf
